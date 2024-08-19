@@ -1,0 +1,1037 @@
+---
+title: "NBA Analysis"
+author: "Team 10"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+## Project Description
+
+### Description
+
+We are team 10 and we want to analyze the underlying trends of the NBA. Our goal is to try to find predicitive statistics for predicting the winner of a game, the nost valuable player of the season and the season championship winner. We chose a dataset called HoopR since it has all game plays and statistics all the way back to the early 2000's. We want to understand if there are ways of prediciting these three goals and if there are we want to evaluate how accurate the predicitions are and if they are viable and robust for future NBA seasons.
+
+### Goals
+
+MVPs - Find predictive stats for identifying the season MVP
+
+Winning Teams - Find predictive stats for identifying the champion
+
+Championships - Find predictive stats for identifying the winner of a game
+
+### Contributions
+
+Andrew Krikorian - Creating and Evaluating Prediction Models
+
+Ehtan Douglas - MVP data exploration and analysis
+
+Harjas Dhaliwal - Championship data exploration and analysis / Prediction Models
+
+Justin Reveredo - Winning Teams data exploration and analysis
+
+Ibrahim Ahmad Elhajjmoussa - Data Cleaning, Preparation and Preprocessing
+
+# Dataset
+
+## Link to Data
+
+Link: https://hoopr.sportsdataverse.org/
+
+## Data Overview
+
+HoopR has raw data from 2010 to 2024 from NBA database. This data has over 500,000 rows of data with 57 columns which includes play by plays, team stats, player stats. For each of our goals, we will create subsets of data for analysis and another subset for predictions. Our winning teams dataset will have game statistics over the whole season per team like points, rebounds and steals in each game. Our championship dataset will have the total statistics over the season as well as the average statistics such as total points in the season as well as average points per game. Our MVP dataset will have individual player statistics including totals and averages like total points in a season and average points per game. 
+
+## Importing Dataset and Dependencies
+
+```{r, results = "hide", error=FALSE, warning=FALSE, message=FALSE}
+#install.packages("hoopR")
+#install.packages('reshape2')
+#install.packages("devtools")
+#devtools::install_github("ricardo-bion/ggradar", dependencies = TRUE)
+library(car)
+library(tidyverse)
+library("hoopR")
+library(ggradar)
+library(reshape2)
+library(broom)
+library(leaps)
+library(gridExtra)
+```
+
+## Aggregating Data
+
+Our first task is to aggregate all the data so that we can do some EDA and start creating the prediciton models. As it was mentioned before, we need to create three datasets for each goal's EDA and three datasets for each goal's prediction model.
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+nba_team_box <- load_nba_team_box(seasons = 2010:most_recent_nba_season())
+head(nba_team_box, 5)
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+selected_columns <- nba_team_box %>%
+  select(team_name, season, team_home_away, team_winner, assists, blocks, defensive_rebounds, fast_break_points, field_goal_pct, field_goals_made, fouls, free_throws_made, largest_lead, offensive_rebounds, points_in_paint, steals, team_turnovers, three_point_field_goals_made, total_rebounds, total_turnovers, turnover_points, turnovers, technical_fouls)
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+team_stats <- nba_team_box %>%
+  group_by(team_name, season) %>%
+  reframe(
+    name = team_name,
+    abr = team_abbreviation,
+    season = season,
+    avg_PTS = mean(team_score, na.rm = TRUE),
+    avg_ALLPTS = mean(opponent_team_score, na.rm = TRUE),
+    avg_FLS = mean(fouls, na.rm = TRUE),
+    avg_STLS = mean(steals, na.rm = TRUE),
+    avg_BLKS = mean(blocks, na.rm = TRUE),
+    avg_FGM = mean(field_goals_made, na.rm = TRUE),
+    avg_FGA = mean(field_goals_attempted, na.rm = TRUE),
+    avg_3PM = mean(three_point_field_goals_made, na.rm = TRUE),
+    avg_3PA = mean(three_point_field_goals_attempted, na.rm = TRUE),
+    avg_MINS = mean(minutes, na.rm = TRUE),
+    avg_FTM  = mean(free_throws_made, na.rm = TRUE),
+    avg_FTA  = mean(free_throws_attempted, na.rm = TRUE),
+    avg_OREBS  = mean(offensive_rebounds, na.rm = TRUE),
+    avg_DREBS  = mean(defensive_rebounds, na.rm = TRUE),
+    avg_REBS = mean(offensive_rebounds+defensive_rebounds, na.rm = TRUE),
+    avg_ASTS  = mean(assists, na.rm = TRUE),
+    avg_TURN  = mean(turnovers, na.rm = TRUE),
+    avg_FBPTS  = mean(fast_break_points, na.rm = TRUE),
+    avg_LEAD = mean(largest_lead, na.rm = TRUE),
+    avg_PIP = mean(points_in_paint, na.rm = TRUE),
+  )
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+team_stats_2010_2024 <- team_stats %>%
+  distinct(name, season, .keep_all = TRUE)
+head(team_stats_2010_2024, 5)
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+seasons <- c(2010:2024)
+
+for (year in seasons) {
+  season_df <- subset(team_stats_2010_2024, season == year)
+  season_name <- paste("team_stats", year, sep = "_")
+  assign(season_name, season_df)
+}
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+player_box <- load_nba_player_box(seasons = 2010:most_recent_nba_season())
+head(player_box, 5)
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+player_stats <- player_box %>%
+  group_by(athlete_display_name, season) %>%
+  reframe(
+    name = athlete_display_name,
+    short_name = athlete_short_name,
+    season = season,
+    avg_PTS = mean(points, na.rm = TRUE),
+    avg_FLS = mean(fouls, na.rm = TRUE),
+    avg_STLS = mean(steals, na.rm = TRUE),
+    avg_REBS = mean(rebounds, na.rm = TRUE),
+    avg_BLKS = mean(blocks, na.rm = TRUE),
+    avg_FGM = mean(field_goals_made, na.rm = TRUE),
+    avg_FGA = mean(field_goals_attempted, na.rm = TRUE),
+    avg_3PM = mean(three_point_field_goals_made, na.rm = TRUE),
+    avg_3PA = mean(three_point_field_goals_attempted, na.rm = TRUE),
+    avg_MINS = mean(minutes, na.rm = TRUE),
+    avg_FTM  = mean(free_throws_made, na.rm = TRUE),
+    avg_FTA  = mean(free_throws_attempted, na.rm = TRUE),
+    avg_OREBS  = mean(offensive_rebounds, na.rm = TRUE),
+    avg_DREBS  = mean(defensive_rebounds, na.rm = TRUE),
+    avg_ASTS  = mean(assists, na.rm = TRUE),
+    avg_TURN  = mean(turnovers, na.rm = TRUE),
+  )
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+player_stats_2010_2024 <- player_stats %>%
+  distinct(name, season, .keep_all = TRUE)
+head(player_stats_2010_2024, 5)
+```
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+seasons <- c(2010:2024)
+
+for (year in seasons) {
+  season_df <- subset(player_stats_2010_2024, season == year)
+  season_name <- paste("player_stats", year, sep = "_")
+  assign(season_name, season_df)
+}
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+all_players <- nba_commonallplayers(league_id = '00', season = year_to_season(most_recent_nba_season() - 1))
+head(all_players, 5)
+```
+
+# Exploratory Data Analysis
+
+## Championships
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+cleaned_team_stats_2010_2024 <- subset(team_stats_2010_2024, team_name != "Team LeBron" & team_name != "Team Giannis")
+# PPG
+ggplot(cleaned_team_stats_2010_2024 %>% filter(season == 2023), aes(x = reorder(name, avg_PTS), y = avg_PTS, fill = name)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(x = "Team", y = "Average PPG", title = "Average PPG per Team in 2022-23 NBA Season")
+
+# FG%
+ggplot(cleaned_team_stats_2010_2024 %>% filter(season == 2023), aes(x = reorder(name, avg_FGM / avg_FGA), y = avg_FGM / avg_FGA, fill = name)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(x = "Team", y = "Average FG%", title = "Average FG% per team in 2022-2023 NBA Season")
+
+# RPG
+ggplot(cleaned_team_stats_2010_2024 %>% filter(season == 2023), aes(x = reorder(name, avg_REBS), y = avg_REBS, fill = name)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(x = "Team", y = "Average RPG", title = "Average RPG per Team in 2022-23 NBA Season")
+
+# APG
+ggplot(cleaned_team_stats_2010_2024 %>% filter(season == 2023), aes(x = reorder(name, avg_ASTS), y = avg_ASTS, fill = name)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(x = "Team", y = "Average APG", title = "Average APG per Team in 2022-23 NBA Season")
+
+# SPG
+ggplot(cleaned_team_stats_2010_2024 %>% filter(season == 2023), aes(x = reorder(name, avg_STLS), y = avg_STLS, fill = name)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(x = "Team", y = "Average SPG", title = "Average SPG per Team in 2022-23 NBA Season")
+
+# BPG
+ggplot(cleaned_team_stats_2010_2024 %>% filter(season == 2023), aes(x = reorder(name, avg_BLKS), y = avg_BLKS, fill = name)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(x = "Team", y = "Average BPG", title = "Average BPG per Team in 2022-23 NBA Season")
+
+# FT%
+ggplot(cleaned_team_stats_2010_2024 %>% filter(season == 2023), aes(x = reorder(name, avg_FTM / avg_FTA), y = avg_FTM / avg_FTA, fill = name)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(x = "Team", y = "Average FT%", title = "Average FT% per Team in 2022-23 NBA Season")
+```
+
+## MVPs
+
+```{r, results = "hide", error=FALSE, warning=FALSE, message=FALSE}
+name <- c("Nikola Jokic", "Joel Embiid", "Nikola Jokic", "Nikola Jokic", "Giannis Antetokounmpo", "Giannis Antetokounmpo", "James Harden", "Russell Westbrook", "Stephen Curry", "Stephen Curry", "Kevin Durant", "LeBron James", "LeBron James", "Derrick Rose", "LeBron James")
+season <- C(2024:2010)
+position <- c("C", "C", "C", "C", "F", "F", "G", "G", "G", "G", "F", "F", "SF", "PG", "SF")
+fg_pct <- c(0.583, 0.548, 0.583, 0.566, 0.553, 0.578, 0.449, 0.425, 0.504, 0.487, 0.503, 0.565, 0.531, 0.445, 0.503)
+ppg <- c(26.4, 33.1, 27.1, 26.4, 29.5, 27.7, 30.4, 31.6, 30.1, 23.8, 32, 26.8, 27.1, 25, 29.7)
+rpg <- c(12.4, 10.2, 13.8, 10.8, 13.6, 12.5, 5.4, 10.7, 5.4, 4.3, 7.4, 8, 7.9, 4.1, 7.3)
+apg <- c(9, 4.2, 7.9, 8.3, 5.6, 5.9, 8.8, 10.4, 6.7, 7.7, 5.5, 7.3, 6.2, 7.7, 8.6)
+blks <- c(0.9, 1.7, 0.9, 0.7, 1, 1.5, 0.7, 0.4, 0.2, 0.2, 0.7, 0.9, 0.8, 0.6, 1)
+
+mvp_data <- cbind.data.frame(name, season, position, fg_pct, ppg, rpg, apg, blks)
+mvp_data
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+player_stats_2010_2024 <- na.omit(player_stats_2010_2024)
+
+get_percentile <- function(year, a) {
+  current_year <- filter(player_stats_2010_2024, season == year)
+  
+  if(a == "ppg")
+  {
+    mvp_stat <- filter(mvp_data, season == year)$ppg
+    more_than_mvp <- nrow(filter(current_year, avg_PTS >= mvp_stat))
+    percentile <- round((nrow(current_year) - more_than_mvp) / nrow(current_year), 2) * 100
+  } else if(a == "rpg")
+  {
+    mvp_stat <- filter(mvp_data, season == year)$rpg
+    more_than_mvp <- nrow(filter(current_year, avg_REBS >= mvp_stat))
+    percentile <- round((nrow(current_year) - more_than_mvp) / nrow(current_year), 2) * 100
+  } else if(a == "apg")
+  {
+    mvp_stat <- filter(mvp_data, season == year)$apg
+    more_than_mvp <- nrow(filter(current_year, avg_ASTS >= mvp_stat))
+    percentile <- round((nrow(current_year) - more_than_mvp) / nrow(current_year), 2) * 100
+  } else if(a == "blks")
+  {
+    mvp_stat <- filter(mvp_data, season == year)$blks
+    more_than_mvp <- nrow(filter(current_year, avg_BLKS >= mvp_stat))
+    percentile <- round((nrow(current_year) - more_than_mvp) / nrow(current_year), 2) * 100
+  }
+  
+  return(percentile)
+}
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+percentile_ppg <- c(get_percentile(2024, "ppg"), get_percentile(2023, "ppg"), get_percentile(2022, "ppg"), get_percentile(2021, "ppg"), get_percentile(2020, "ppg"), get_percentile(2019, "ppg"), get_percentile(2018, "ppg"), get_percentile(2017, "ppg"), get_percentile(2016, "ppg"), get_percentile(2015, "ppg"), get_percentile(2014, "ppg"), get_percentile(2013, "ppg"), get_percentile(2012, "ppg"), get_percentile(2011, "ppg"), get_percentile(2010, "ppg"))
+
+percentile_rpg <- c(get_percentile(2024, "rpg"), get_percentile(2023, "rpg"), get_percentile(2022, "rpg"), get_percentile(2021, "rpg"), get_percentile(2020, "rpg"), get_percentile(2019, "rpg"), get_percentile(2018, "rpg"), get_percentile(2017, "rpg"), get_percentile(2016, "rpg"), get_percentile(2015, "rpg"), get_percentile(2014, "rpg"), get_percentile(2013, "rpg"), get_percentile(2012, "rpg"), get_percentile(2011, "rpg"), get_percentile(2010, "rpg"))
+
+percentile_blks <- c(get_percentile(2024, "blks"), get_percentile(2023, "blks"), get_percentile(2022, "blks"), get_percentile(2021, "blks"), get_percentile(2020, "blks"), get_percentile(2019, "blks"), get_percentile(2018, "blks"), get_percentile(2017, "blks"), get_percentile(2016, "blks"), get_percentile(2015, "blks"), get_percentile(2014, "blks"), get_percentile(2013, "blks"), get_percentile(2012, "blks"), get_percentile(2011, "blks"), get_percentile(2010, "blks"))
+
+percentile_apg <- c(get_percentile(2024, "apg"), get_percentile(2023, "apg"), get_percentile(2022, "apg"), get_percentile(2021, "apg"), get_percentile(2020, "apg"), get_percentile(2019, "apg"), get_percentile(2018, "apg"), get_percentile(2017, "apg"), get_percentile(2016, "apg"), get_percentile(2015, "apg"), get_percentile(2014, "apg"), get_percentile(2013, "apg"), get_percentile(2012, "apg"), get_percentile(2011, "apg"), get_percentile(2010, "apg"))
+
+all_percentiles <- cbind.data.frame(season, percentile_ppg, percentile_rpg, percentile_apg, percentile_blks)
+names(all_percentiles) <- c("season", "ppg", "rpg", "apg", "blks")
+
+center_percentiles <- filter(all_percentiles, season %in% c("2021", "2022", "2023", "2024"))
+guard_percentiles <- filter(all_percentiles, season %in% c("2011", "2015", "2016", "2017", "2018"))
+forward_percentiles <- filter(all_percentiles, season %in% c("2010", "2012", "2013", "2014", "2019", "2020"))
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+ggradar(all_percentiles, plot.title = "Attributes Needed for All Positions", legend.title = "Years")
+
+ggradar(forward_percentiles, plot.title = "Attributes Needed for Forwards", legend.title = "Years")
+
+ggradar(guard_percentiles, plot.title = "Attributes Needed for Guards", legend.title = "Years")
+
+ggradar(center_percentiles, plot.title = "Attributes Needed for Centers", legend.title = "Years")
+```
+
+## Winning Teams
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+selected_columns <- selected_columns %>%
+  mutate(team_winner = as.numeric(team_winner))
+
+head(selected_columns, 5)
+```
+
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+selected_columns <- selected_columns %>%
+  mutate(
+    team_winner = as.numeric(team_winner),
+    fast_break_points = as.numeric(fast_break_points),
+    largest_lead = as.numeric(largest_lead),
+    points_in_paint = as.numeric(points_in_paint),
+    turnover_points = as.numeric(turnover_points)
+  )
+
+head(selected_columns, 5)
+
+numeric_columns <- selected_columns %>%
+  select(team_winner, assists, blocks, defensive_rebounds, fast_break_points, field_goal_pct, 
+         field_goals_made, fouls, free_throws_made, largest_lead, offensive_rebounds, 
+         points_in_paint, steals, team_turnovers, three_point_field_goals_made, total_rebounds, 
+         total_turnovers, turnover_points, turnovers, technical_fouls)
+
+# Calculate the correlation matrix
+correlation_matrix <- cor(numeric_columns, use = "complete.obs")
+```
+
+Here, we selected columns that we deemed important to our initial question of what makes a team win. We took out extremely specific statistics/variables to make it easier to understand. After we isolated the main categories that we wanted to interpret, we then made a correlation matrix with these variables. These variables were: team_winner, assits, blocks, defensive rebounds, fast break points, field goals made, fouls, free throws made, largest lead, offensive rebounds, points in point, steals, team turnovers, three point field goals made, total rebounds, total turnovers, total turnovers, turnover points, turnovers, and technical fouls. With tis wide plethora of variables, we look for the significance between each one. 
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+heatmap_data <- melt(correlation_matrix)
+
+ggplot(heatmap_data, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", 
+                       midpoint = 0, limit = c(-1, 1), space = "Lab", 
+                       name = "Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.text = element_text(size = 8)) +
+  labs(title = "Winning Attributes Correlation Heatmap",
+       x = "",
+       y = "")
+```
+We decided to generate a heat map with the correlation matrix that we had generated in the previous code cell. This heatmap allows us to better interpret the relationship between each variable, and most importantly our output variable (team_winner). As we are looking at what variables have the most positive and negative correlations. The output variable of 1 means that the team has won and the output variable of 0 means the team has lost. The output variable shows a strong positive correlation with "assists," "defensive_rebounds," and "field_goal_pct," suggesting that these factors are closely associated with winning. Conversely, "technical_fouls" and "turnovers" exhibit weaker or negative correlations with winning, indicating that fewer of these contribute to better performance.
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+selected_columns <- selected_columns %>%
+  mutate(
+    team_winner = as.numeric(team_winner),
+    fast_break_points = as.numeric(fast_break_points),
+    largest_lead = as.numeric(largest_lead),
+    points_in_paint = as.numeric(points_in_paint),
+    turnover_points = as.numeric(turnover_points)
+  )
+
+numeric_columns_small <- selected_columns %>%
+  select(team_winner, assists, blocks, fouls, offensive_rebounds,
+         points_in_paint, steals, three_point_field_goals_made,
+         turnovers)
+
+# Calculate the correlation matrix
+correlation_matrix_small <- cor(numeric_columns_small, use = "complete.obs")
+
+heatmap_data_small <- reshape2::melt(correlation_matrix_small)
+
+ggplot(heatmap_data_small, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red",
+                       midpoint = 0, limit = c(-1, 1), space = "Lab",
+                       name = "Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.text = element_text(size = 8)) +
+  labs(title = "Winning Attributes Correlation Heatmap",
+       x = "",
+       y = "")
+```
+The first heat map had a large number of variables which made it slightly harder to interpret. Therfore, for this heatmap we decided to lessen the amount of variables and focus on the most important ones. In this, it is important to note that we took out field goal percentage, even though it was a strong predictor. This is because, this is intuitive and it is an added variable that might throw off our interpretation and our goal here is to make it a more transparent dataset. "Team_winner" here shows strong positive correlations with "assists" and "points in paint," ensuring that effective teamwork and scoring in the paint are crucial for success. Conversely, a strong negative correlation with "turnovers" indicates that minimizing turnovers is important for winning. Additionally, "assists" correlate positively with "three_point_field_goals_made" which we can add to a significant variable. 
+
+It is also important to note that this a general heatmap(s) of NBA seasons from 2010 to 2024. So, this heatmap is a general trend from all of these seasons however, if we generate a heatmap by season the results would be different. As the three point field goals would have a stronger correlation with team_winner after 2015 rather than points in the paint. Therefore, there are different trends in the heatmap itself. 
+
+# Linear Regression Models
+
+## Winning Model
+
+For our first prediction model, we are trying to predict the winner of a game. We will start by creating the dataset we will use for the multiple linear regression model. For this goal our target variable is a binary variable which represents a win or a loss for the game. We will start by giving the model all possible predictors then we will use regsubsets to find the best combination of predictors and see the evolution from the first to the second model. After doing so, we will check the assumptions and see if our model is viable.
+
+### Setting Up Data
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+nba_team_box_clean <- nba_team_box %>% select(team_winner, defensive_rebounds,field_goals_made, fouls, free_throws_attempted, points_in_paint, technical_fouls, three_point_field_goals_attempted, team_turnovers, assists, fast_break_points, field_goals_attempted, free_throw_pct, largest_lead, steals, three_point_field_goal_pct, total_rebounds, turnover_points, team_score, blocks, field_goal_pct, flagrant_fouls, free_throws_made, offensive_rebounds, three_point_field_goals_made, turnovers, total_turnovers)
+nba_team_box_clean
+
+nba_team_box_model <- na.omit(nba_team_box_clean)
+nba_team_box_model <- nba_team_box_model %>%
+  mutate(across(-all_of("team_winner"), as.double))
+head(nba_team_box_model, 5)
+```
+
+We have set up the tibble for the prediction model. We have added our target variable in and will now pass it to the first model.
+
+### Winning Model with All Variables
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+winning_all_var_model <- lm(team_winner ~ . - three_point_field_goals_made - total_turnovers, data = nba_team_box_model)
+summary(winning_all_var_model)
+```
+
+This is our first iteration of the model. We have an adjusted R^2 value of 0.5252 with 24 predictors.
+
+### Finding Best Predictors
+
+```{r, results = "hide", error=FALSE, warning=FALSE, message=FALSE}
+winning_best_subset <- regsubsets(team_winner~., data = nba_team_box_model, 
+                                  nbest = 1, nvmax = NULL, force.in = NULL, 
+                                  force.out = NULL, method = "exhaustive")
+winning_summary_best_subset <- summary(winning_best_subset)
+as.data.frame(winning_summary_best_subset$outmat)
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+which.max(winning_summary_best_subset$adjr2)
+```
+
+We are now using regsubsets to find the best combination of predictors for our second variation of the model.
+
+### Best Predictors for Winning Model
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+winning_summary_best_subset$which[24,]
+```
+
+This is a binary list of if a column is considered a significant predictor or not. True means put it in the next model and false means don't.
+
+### Winning Model with Best Predictors
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+# Create the linear regression model with best predictors
+winning_model <- lm(team_winner ~ . -total_turnovers -three_point_field_goals_made, data = nba_team_box_model)
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+# Summary of the model
+summary(winning_model)
+
+# Tidy the model output
+filtered_tidy_model <- tidy(winning_model)
+print(winning_model)
+
+# Check the model's residuals
+filtered_glance_model <- glance(winning_model)
+print(winning_model)
+```
+
+As you can tell this model is slightly better because we are now using 22 predictors to capture the same adjusted R^2 value of .5252.
+
+### Hypothesis
+
+H0: There is no difference in effect to winning by each selected variables
+
+H1: One of the selected variables differ from the rest. 
+
+### Anova
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+anova_result <- anova(winning_model)
+anova_result
+```
+
+We wanted to run a quick anova test to conduct a test for our hypothesis. We clearly see that avg_FGA, avg_FTA and avg_ASTS were rejected meaning they are different from the rest.
+
+### Q-Q Plot - Normality Assumption
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+qqnorm(winning_model$residuals, main = "Q-Q Plot of Winning Model Residuals")
+qqline(winning_model$residuals, col = "red")
+```
+
+After running a normality assumption test, we can tell there are very slight deviations from normal.
+
+### Residuals Plot for Winning Model
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+# Plot residuals
+plot(winning_model$residuals)
+abline(h = 0, col = "red")
+title('Residuals of Winning model')
+```
+
+After plotting the residuals, we can tell our data passes the constant variance assumption.
+
+### Durbin Watson Test - Independence
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+dw_test <- durbinWatsonTest(winning_model)
+dw_test
+```
+
+Running a quick Durbin Watson test tells us if there is any autocorrelation and according to this test, there is very slight autocorrelation.
+
+### Conclusion
+
+After running an anova test, a multiple linear regression model and testing the predictors, the attributes to playing like a winning team are shooting as many shots as possible. This makes sense this two of our variables that differed from the anova test had to do with shooting shots average field goals attempted and average free throws attempted.
+
+### Future Plans
+
+After running these linear regression models and understanding the limitations of our data especially our response variable, the route we would take in the future is using classification/clustering rather than regression.
+
+## MVPs - Binary
+
+For our second prediction model, we are trying to predict the MVP of a season. We will start by creating the dataset we will use for the multiple linear regression model. For this goal our target variable is a binary variable which represents if the player is an mvp or not. We will start by giving the model all possible predictors then we will use regsubsets to find the best combination of predictors and see the evolution from the first to the second model. After doing so, we will check the assumptions and see if our model is viable.
+
+### Setting Up Data
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+# Define MVPs for each year
+mvp_winners <- c(
+    "2010" = "LeBron James",
+    "2011" = "Derrick Rose",
+    "2012" = "LeBron James",
+    "2013" = "LeBron James",
+    "2014" = "Kevin Durant",
+    "2015" = "Stephen Curry",
+    "2016" = "Stephen Curry",
+    "2017" = "Russell Westbrook",
+    "2018" = "James Harden",
+    "2019" = "Giannis Antetokounmpo",
+    "2020" = "Giannis Antetokounmpo",
+    "2021" = "Nikola Jokić",
+    "2022" = "Nikola Jokić",
+    "2023" = "Giannis Antetokounmpo",
+    "2024" = "To be determined"
+)
+
+# Create isMVP column based on MVP winners
+player_stats_2010_2024$isMVP <- ifelse(player_stats_2010_2024$athlete_display_name == mvp_winners[as.character(player_stats_2010_2024$season)], 1, 0)
+
+# Print the modified DataFrame
+# Print rows where isMVP is 1 using subset()
+mvp_players <- subset(player_stats_2010_2024, isMVP == 1)
+print(mvp_players)
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+player_stats_2010_2024_clean <- player_stats_2010_2024 %>% select(-athlete_display_name, -season, -name, -short_name)
+nba_team_box_clean
+names(player_stats_2010_2024_clean)
+
+player_stats_2010_2024_model <- na.omit(player_stats_2010_2024_clean)
+player_stats_2010_2024_model <- player_stats_2010_2024_model %>%
+  mutate(across(-all_of("isMVP"), as.double))
+head(player_stats_2010_2024_model, 5)
+```
+
+We have set up the tibble for the prediction model. We have added our target variable in and will now pass it to the first model.
+
+### MVP Model with all Variables
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+mvp_all_var_model <- lm(isMVP ~ ., data = player_stats_2010_2024_model)
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+summary(mvp_all_var_model)
+```
+
+This is our first iteration of the model. We have an adjusted R^2 value of 0.04723 with 14 predictors.
+
+### Finding Best Predictors
+
+```{r, results = "hide", error=FALSE, warning=FALSE, message=FALSE}
+mvp_best_subset <- regsubsets(isMVP~., data = player_stats_2010_2024_model, nbest = 1, nvmax = NULL, force.in = NULL, force.out = NULL, method = "exhaustive")
+mvp_summary_best_subset <- summary(mvp_best_subset)
+as.data.frame(mvp_summary_best_subset$outmat)
+```
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+which.max(mvp_summary_best_subset$adjr2)
+```
+
+We are now using regsubsets to find the best combination of predictors for our second variation of the model.
+
+### Best Predictors for MVP Model
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+mvp_summary_best_subset$which[12,]
+```
+
+This is a binary list of if a column is considered a significant predictor or not. True means put it in the next model and false means don't.
+
+### MVP Model with Best Predictors
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+# Create the linear regression model with best predictors
+mvp_model <- lm(isMVP ~ . - avg_PTS - avg_BLKS - avg_3PM - avg_OREBS, data = player_stats_2010_2024_model)
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+# Summary of the model
+summary(mvp_model)
+
+# Tidy the model output
+filtered_tidy_model <- tidy(mvp_model)
+print(mvp_model)
+
+# Check the model's residuals
+filtered_glance_model <- glance(mvp_model)
+print(mvp_model)
+```
+
+As you can tell this model is slightly better because we are now using 12 predictors to capture the same adjusted R^2 value of 0.04744.
+
+### Hypothesis
+
+H0: There is no difference in effect to selecting MVPs by each selected variables
+
+H1: One of the selected variables differ from the rest. 
+
+### Anova
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+anova_result <- anova(mvp_model)
+anova_result
+```
+
+We wanted to run a quick anova test to conduct a test for our hypothesis. We clearly see that avg_STLS, avg_REBS, avg_FGM, avg_FGA, avg_MINS, avg_FTM, avg_FTA, avg_DREBS, and avg_ASTS were rejected meaning they are different from the rest.
+
+### Q-Q Plot - Normality Assumption
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+qqnorm(mvp_model$residuals, main = "Q-Q Plot of MVP Binary Model Residuals")
+qqline(mvp_model$residuals, col = "red")
+```
+
+After running a normality assumption test, we can tell there are very large deviations from normal. This is due to the fact that we only have 14 truth values for being an MVP and this is causing the large deviation on the right side of the plot. We have decided to disregard these outliers as they are essential to our model.
+
+### Residuals Plot for MVP Model - Constant Variance Assumption
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+# Plot residuals
+plot(mvp_model$residuals)
+abline(h = 0, col = "red")
+title('Residuals of MVP model')
+```
+
+After plotting the residuals, we can tell our data has outliers for the constant variance assumption. Once again, there are 14 outliers which directly correlates to the 14 MVP's in the dataset. These MVP's will continue to skew assumptions no matter what so we can disregard them.
+
+### Durbin Watson Test - Independence
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+dw_test <- durbinWatsonTest(mvp_model)
+dw_test
+```
+
+Running a quick Durbin Watson test tells us if there is any autocorrelation and according to this test, there is no autocorrelation according to this test.
+
+### Conclusion
+
+After running an anova test, a multiple linear regression model and testing the predictors, the attributes to winning the MVP are playing lots of minutes, shooting as many field goals as possible while maintaining a high field goal percentage and scoring the most points on your team. A limitation we encountered was that creating prediction models with very small number of truth values is extremely hard hence the small R^2 values.
+
+### Future Plans
+
+After running these linear regression models and understanding the limitations of our data especially our response variable, the route we would take in the future is using classification/clustering rather than regression.
+
+## MVPs - Votes
+
+For our third prediction model, we are trying to predict the MVP of a season. We will start by creating the dataset we will use for the multiple linear regression model. For this goal our target variable is a integer variable which represents how many votes the player got for MVP of that season. We will start by giving the model all possible predictors then we will use regsubsets to find the best combination of predictors and see the evolution from the first to the second model. After doing so, we will check the assumptions and see if our model is viable.
+
+### Setting Up Data
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+#Instead of just using MVP/not MVP, we are using MVP voting from basketball reference's website to get total MVP votes and predict that instead
+mvp_votes <- read.csv('~/Downloads/mvp_votes.csv')
+head(mvp_votes, 5)
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+#Merging MVP votes data with the player data from before and replacing NANs with 0s
+player_stats_2010_2024_merged <- merge(player_stats_2010_2024, mvp_votes, by = c('name', 'season'), all.x = T)
+player_stats_2010_2024_merged$votes[is.na(player_stats_2010_2024_merged$votes)] <- 0
+head(player_stats_2010_2024_merged, 5)
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+#Getting second dataframe with only MVP vote getters
+mvp_votes_only <- merge(player_stats_2010_2024, mvp_votes, by = c('name', 'season'), all.x = F)
+head(mvp_votes_only, 5)
+```
+
+We have set up the tibble for the prediction model. We have added our target variable in and will now pass it to the first model.
+
+
+### MVP Model with All Parameters
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+MVP_votes_all_var_model <- lm(votes ~ avg_FLS + avg_STLS + avg_REBS + avg_BLKS + avg_PTS + avg_FGM + avg_FGA + avg_3PM + avg_3PA + avg_MINS + avg_FTA + avg_OREBS + avg_ASTS + avg_TURN, data = player_stats_2010_2024_merged)
+
+# Tidy the model output
+filtered_tidy_model <- tidy(MVP_votes_all_var_model)
+summary(MVP_votes_all_var_model)
+
+# Check the model's residuals
+filtered_glance_model <- glance(MVP_votes_all_var_model)
+print(MVP_votes_all_var_model)
+```
+
+This is our first iteration of the model. We have an adjusted R^2 value of 0.1744 with 14 predictors.
+
+
+### Finding Best Predictors
+
+```{r, results = "hide", error=FALSE, warning=FALSE, message=FALSE}
+mvp_votes_best_subset <- regsubsets(votes~ avg_FLS + avg_STLS + avg_REBS + avg_BLKS + avg_PTS + avg_FGM + avg_FGA + avg_3PM + avg_3PA + avg_MINS + avg_FTA + avg_OREBS + avg_ASTS + avg_TURN, data = player_stats_2010_2024_merged, nbest = 1, nvmax = NULL, force.in = NULL, force.out = NULL, method = "exhaustive")
+mvp_votes_summary_best_subset <- summary(mvp_votes_best_subset)
+as.data.frame(mvp_votes_summary_best_subset$outmat)
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+which.max(mvp_votes_summary_best_subset$adjr2)
+```
+
+We are now using regsubsets to find the best combination of predictors for our second variation of the model.
+
+### Best Predictors for MVP Model
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+mvp_votes_summary_best_subset$which[12,]
+```
+
+This is a binary list of if a column is considered a significant predictor or not. True means put it in the next model and false means don't.
+
+### MVP Model with Best Predictors
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+# Create the linear regression model with best predictors
+mvp_votes_model <- lm(votes ~ avg_FLS + avg_STLS + avg_REBS + avg_BLKS + avg_PTS + avg_FGA + avg_3PM + avg_3PA + avg_MINS + avg_FTA + avg_OREBS + avg_TURN, data = player_stats_2010_2024_merged)
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+# Summary of the model
+summary(mvp_votes_model)
+
+# Tidy the model output
+filtered_tidy_model <- tidy(mvp_votes_model)
+print(mvp_votes_model)
+
+# Check the model's residuals
+filtered_glance_model <- glance(mvp_votes_model)
+print(mvp_votes_model)
+```
+
+As you can tell this model is slightly better because we are now using 12 predictors to capture the same adjusted R^2 value of 0.1745.
+
+
+### Hypothesis
+
+H0: There is no difference in effect to selecting MVPs by each selected variables
+
+H1: One of the selected variables differ from the rest. 
+
+### Anova
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+anova_result <- anova(mvp_votes_model)
+anova_result
+```
+
+We wanted to run a quick anova test to conduct a test for our hypothesis. We clearly see that avg_FLS, avg_STLS, avg_REBS, avg_FGM, avg_FGA, avg_MINS, avg_FTM, avg_FTA, avg_DREBS, and avg_ASTS were rejected meaning they are different from the rest.
+
+### Q-Q Plot - Normality Assumption
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+qqnorm(mvp_votes_model$residuals, main = "Q-Q Plot of MVP Votes Model Residuals")
+qqline(mvp_votes_model$residuals, col = "red")
+```
+
+After running a normality assumption test, we can tell there are very large deviations from normal. This is due to the fact that we only have 70 truth values for MVP votes and this is causing the large deviation on the right side of the plot. We have decided to disregard these outliers as they are essential to our model.
+
+### Residuals Plot for MVP Model
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+# Plot residuals
+plot(mvp_votes_model$residuals)
+abline(h = 0, col = "red")
+title('Residuals of MVP model')
+```
+
+After plotting the residuals, we can tell our data has outliers for the constant variance assumption. Once again, there are 70 outliers which directly correlates to the 70 MVP votes in the dataset. These MVP's will continue to skew assumptions no matter what so we can disregard them.
+
+
+### Durbin Watson Test - Independence
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+dw_test <- durbinWatsonTest(mvp_votes_model)
+dw_test
+```
+
+Running a quick Durbin Watson test tells us if there is any autocorrelation and according to this test, there is slight autocorrelation according to this test.
+
+### Analysis
+
+When we decided on the idea of projecting NBA stats, we wanted to find some examples of underrated seasons. We thought that the best way to show a player was 'underrated' or under appreciated was to compare the amount of real life votes they received and their projected vote total.
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+mvp_testing <- predict(mvp_votes_model, mvp_votes_only)
+under_appreciated <- order(mvp_testing, decreasing = TRUE)[1:5]
+
+print("Top 5 most underappreciated mvp-vote receiving seasons")
+num <- 1
+for (i in under_appreciated) {
+  print(paste0("(", num, ") ", mvp_votes_only$name[i], " ", mvp_votes_only$season[i], " - Projected ", round(mvp_testing[i], 0), " more votes"))
+  num <- num + 1
+}
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+all_testing <- predict(mvp_votes_model, player_stats_2010_2024_merged)
+player_stats_2010_2024_merged$proj_votes <- player_stats_2010_2024_merged$votes
+for (i in 1:nrow(player_stats_2010_2024_merged)) {
+  player_stats_2010_2024_merged$proj_votes[i] <- player_stats_2010_2024_merged$proj_votes[i] + round(all_testing[i], 0)
+  if(isTRUE(player_stats_2010_2024_merged$proj_votes[i] < 0) == TRUE) {
+    player_stats_2010_2024_merged$proj_votes[i] <- 0
+  }
+}
+player_stats_2010_2024_merged <- na.omit(player_stats_2010_2024_merged)
+head(player_stats_2010_2024_merged, 5)
+```
+
+Now that we are finished with our MVP projection model, the next step is to run it and see how it does compared to real life data.
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+print('Projected MVP winners by year')
+for(i in 2010:2024) {
+  print(paste0(player_stats_2010_2024_merged %>% filter(season == i) %>% filter(proj_votes == max(proj_votes)) %>% summarise(season), ": ", player_stats_2010_2024_merged %>% filter(season == i) %>% filter(proj_votes == max(proj_votes)) %>% summarise(name), " - ", player_stats_2010_2024_merged %>% filter(season == i) %>% filter(proj_votes == max(proj_votes)) %>% summarise(proj_votes), " projected votes"))
+}
+```
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+print('Actual MVP winners by year')
+for (i in 2010:2024) {
+  print(paste0(player_stats_2010_2024_merged %>% filter(season == i) %>% filter(votes == max(votes)) %>% summarise(season), ": ", player_stats_2010_2024_merged %>% filter(season == i) %>% filter(votes == max(votes)) %>% summarise(name), " - ", player_stats_2010_2024_merged %>% filter(season == i) %>% filter(votes == max(votes)) %>% summarise(votes), " votes"))
+}
+```
+
+There are a few things of note we can see here. First off, the only season where the projected MVP did not actually win the MVP award was this season, 2024. Our algorithm projected Joel Embiid to win the award, but Nikola Jokic won in real life. This is because Joel Embiid did not play enough games to qualify for the award, but he was on pace to win before getting injured.
+
+### Conclusion
+
+After running an anova test, a multiple linear regression model and testing the predictors, the attributes to winning the MVP are playing lots of minutes, shooting as many field goals as possible while maintaining a high field goal percentage and scoring the most points on your team. A limitation we encountered was that creating prediction models with very small number of truth values is extremely hard hence the small R^2 values.
+
+### Future Plans
+
+After running these linear regression models and understanding the limitations of our data especially our response variable, the route we would take in the future is using classification/clustering rather than regression.
+
+## Championships
+
+For our fourth prediction model, we are trying to predict the champion of a season. We will start by creating the dataset we will use for the multiple linear regression model. For this goal our target variable is a binary variable which represents if the team is the champion of that season or not. We will start by giving the model all possible predictors then we will use regsubsets to find the best combination of predictors and see the evolution from the first to the second model. After doing so, we will check the assumptions and see if our model is viable.
+
+### Setting Up Data
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+cleaned_team_stats_2010_2024$is_champion <- 0
+
+# Manually set `is_champion` to 1 for each championship-winning team and season
+cleaned_team_stats_2010_2024 <- cleaned_team_stats_2010_2024 %>%
+  mutate(is_champion = ifelse(grepl("Lakers", team_name) & season == 2010, 1, is_champion)) %>%
+  mutate(is_champion = ifelse(grepl("Mavericks", team_name) & season == 2011, 1, is_champion)) %>%
+  mutate(is_champion = ifelse(grepl("Heat", team_name) & season == 2012, 1, is_champion)) %>%
+  mutate(is_champion = ifelse(grepl("Heat", team_name) & season == 2013, 1, is_champion)) %>%
+  mutate(is_champion = ifelse(grepl("Spurs", team_name) & season == 2014, 1, is_champion)) %>%
+  mutate(is_champion = ifelse(grepl("Warriors", team_name) & season == 2015, 1, is_champion)) %>%
+  mutate(is_champion = ifelse(grepl("Cavaliers", team_name) & season == 2016, 1, is_champion)) %>%
+  mutate(is_champion = ifelse(grepl("Warriors", team_name) & season == 2017, 1, is_champion)) %>%
+  mutate(is_champion = ifelse(grepl("Warriors", team_name) & season == 2018, 1, is_champion)) %>%
+  mutate(is_champion = ifelse(grepl("Raptors", team_name) & season == 2019, 1, is_champion)) %>%
+  mutate(is_champion = ifelse(grepl("Lakers", team_name) & season == 2020, 1, is_champion)) %>%
+  mutate(is_champion = ifelse(grepl("Bucks", team_name) & season == 2021, 1, is_champion)) %>%
+  mutate(is_champion = ifelse(grepl("Warriors", team_name) & season == 2022, 1, is_champion)) %>%
+  mutate(is_champion = ifelse(grepl("Nuggets", team_name) & season == 2023, 1, is_champion))
+
+
+cleaned_team_stats_2010_2024 <- cleaned_team_stats_2010_2024 %>%
+  arrange(season)
+
+cleaned_team_stats_2010_2024 <- cleaned_team_stats_2010_2024 %>%
+  select(-avg_FBPTS, -avg_LEAD, -avg_PIP)
+
+head(cleaned_team_stats_2010_2024, 5)
+```
+
+We have set up the tibble for the prediction model. We have added our target variable in and will now pass it to the first model.
+
+### Champion Model with All Variables
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+champion_all_var_model <- lm(is_champion ~ avg_FLS + avg_STLS + avg_REBS + avg_BLKS + avg_PTS + avg_FGM + avg_FGA + avg_3PM + avg_3PA + avg_FTA + avg_ASTS + avg_TURN, data = cleaned_team_stats_2010_2024)
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+# Summary of the model
+summary(champion_all_var_model)
+
+# Tidy the model output
+filtered_tidy_model <- tidy(champion_all_var_model)
+print(champion_all_var_model)
+
+# Check the model's residuals
+filtered_glance_model <- glance(champion_all_var_model)
+print(champion_all_var_model)
+```
+
+This is our first iteration of the model. We have an adjusted R^2 value of 0.05791 with 12 predictors.
+
+### Finding Best Predictors
+
+```{r, results = "hide", error=FALSE, warning=FALSE, message=FALSE}
+champion_best_subset <- regsubsets(is_champion ~ avg_FLS + avg_STLS + avg_REBS + avg_BLKS + avg_PTS + avg_FGM + avg_FGA + avg_3PM + avg_3PA + avg_FTA + avg_ASTS + avg_TURN, data = cleaned_team_stats_2010_2024, nbest = 1, nvmax = NULL, force.in = NULL, force.out = NULL, method = "exhaustive")
+champion_summary_best_subset <- summary(champion_best_subset)
+as.data.frame(champion_summary_best_subset$outmat)
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+which.max(champion_summary_best_subset$adjr2)
+```
+
+We are now using regsubsets to find the best combination of predictors for our second variation of the model.
+
+### Best Predictors for Champion Model
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+champion_summary_best_subset$which[6,]
+```
+
+This is a binary list of if a column is considered a significant predictor or not. True means put it in the next model and false means don't.
+
+### Champion Model with Best Predictors
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+# Create the linear regression model with best predictors
+champion_model <- lm(is_champion ~ avg_STLS + avg_REBS + avg_PTS + avg_FGA + avg_FTA + avg_ASTS, data = cleaned_team_stats_2010_2024)
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+# Summary of the model
+summary(champion_model)
+
+# Tidy the model output
+filtered_tidy_model <- tidy(champion_model)
+print(champion_model)
+
+# Check the model's residuals
+filtered_glance_model <- glance(champion_model)
+print(champion_model)
+```
+
+As you can tell this model is a lot better because we are now using 6 predictors to capture the same adjusted R^2 value of 0.06464.
+
+### Hypothesis
+
+H0: There is no difference in effect to selecting MVPs by each selected variables
+
+H1: One of the selected variables differ from the rest. 
+
+### Anova
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+anova_result <- anova(champion_model)
+anova_result
+```
+
+We wanted to run a quick anova test to conduct a test for our hypothesis. We clearly see that avg_FGA, avg_FTA, and avg_ASTS were rejected meaning they are different from the rest.
+
+### Q-Q Plot - Normality Assumption
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+qqnorm(champion_model$residuals, main = "Q-Q Plot of Champion Model Residuals")
+qqline(champion_model$residuals, col = "red")
+```
+
+After running a normality assumption test, we can tell there are very large deviations from normal. This is due to the fact that we only have 14 truth values for being a champion and this is causing the large deviation on the right side of the plot. We have decided to disregard these outliers as they are essential to our model.
+
+### Residuals Plot for Champion Model
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+# Plot residuals
+plot(champion_model$residuals)
+abline(h = 0, col = "red")
+title('Residuals of Champion model')
+```
+
+After plotting the residuals, we can tell our data has outliers for the constant variance assumption. Once again, there are 14 outliers which directly correlates to the 14 champions's in the dataset. These MVP's will continue to skew assumptions no matter what so we can disregard them.
+
+### Durbin Watson Test - Independence
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+dw_test <- durbinWatsonTest(champion_model)
+dw_test
+```
+
+Running a quick Durbin Watson test tells us if there is any autocorrelation and according to this test, there is no autocorrelation according to this test.
+
+### Analysis
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+summary_data <- cleaned_team_stats_2010_2024 %>%
+  select(-avg_MINS) %>% 
+  group_by(is_champion) %>%
+  summarise(across(avg_FLS:avg_TURN, mean))
+
+# Reshape the summary data frame from wide to long format
+summary_data_long <- summary_data %>%
+  pivot_longer(cols = avg_FLS:avg_TURN, names_to = "variable", values_to = "value")
+
+# Create the bar plot
+plot <- ggplot(summary_data_long, aes(x = variable, y = value, fill = factor(is_champion))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Variable", y = "Average Value", fill = "Is Champion") +
+  ggtitle("Comparison of Average Values by Is Champion") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(plot)
+```
+Championship teams generally have higher averages in critical areas such as assists (avg_ASTS), field goals made (avg_FGM), free throws made (avg_FTM), and total rebounds (avg_REBS), strong rebounding are a large key factor in winning championships. Non-championship teams tend to have higher average values in field goals attempted (avg_FGA) and free throws attempted (avg_FTA), suggesting a less efficient scoring performance compared to championship teams. However, generally we notice that the differences that we mention above are not significantly larger. Therefore, we need to look at more nuisances that tell the whole story that were not avaliable in the dataset. For example, playoff experience, injuries, team chemistry and different measures like these.
+
+### Conclusion
+
+After running an anova test, a multiple linear regression model and testing the predictors, the attributes to creating a championship team are shooting as many shots as possible, getting the most rebounds and shooting for a high score (>100 pts). A limitation we encountered was that creating prediction models with very small number of truth values is extremely hard hence the small R^2 values.
+
+## Future Plans
+
+After running these linear regression models and understanding the limitations of our data especially our response variable, the route we would take in the future is using classification/clustering rather than regression.
