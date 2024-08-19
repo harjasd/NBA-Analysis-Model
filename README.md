@@ -21,3 +21,38 @@ The first steps we took when looking at this large dataset was wonder which vari
 After finding our desired list, we created a subset of the data grouped by team with the variables named before. We then visualized each statistic using a histogram and were surprised with the results. The Denver Nuggets won the championship last year and we are currently working with 2022-2023 season. From our data, the Nuggets placed in the top five in only two categories. We were shocked when we saw this as it went against all of our ideas. 
 
 After seeing the plots (plots below), we decided to add more variables such as the total team points, field goals attempted, threes attempted, average lead, turnovers, average offensive and defensive rebounds, and more.
+
+#### Models
+
+1) Linear Regression
+
+We are thinking of making a simple linear regression model to predict champion ship wins by either wins, total points or even some computed overall team score that we would create.
+
+2) KNN
+
+We want to use KNN to find clusters of teams and similarities between championship winners. This will help us make our linear regression and our neural network more accurate by giving better parameters.
+
+3) Neural Network
+
+We want to use a simple fully connected neural network to predict championship winners with a large set of parameters for a high level of accuracy. We are thinking of using parameters such as wins, players, points per game, efficiency scores. This may change depending on our KNN model and what is tells us about the underlying statistics.
+
+#### Evaluation Approaches
+
+1) Linear Regression:
+
+Mean Squared Error (MSE): Calculate the MSE between the predicted championship wins and the actual championship wins. Gives a measure of how well the linear regression model is performing.
+
+2) KNN:
+
+Visualization: Visualize the clusters formed by KNN to see if they make sense and correspond to meaningful groupings of teams.
+
+3) Neural Network:
+
+Accuracy: We are going to use accuracy as a metric, which measures the proportion of correctly classified instances.
+
+Loss Function: We are going to use a loss function, such as cross-entropy loss for classification tasks, to measure the difference between the predicted and actual values.
+
+Validation Set Performance: Split data into training and validation sets. Monitor the performance of the neural network on the validation set to check for over fitting.
+
+Confusion Matrix: For classification tasks, we can use a confusion matrix to see how well the neural network is classifying instances into different categories.
+
