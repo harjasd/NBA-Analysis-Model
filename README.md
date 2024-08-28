@@ -6,8 +6,6 @@ To conduct the EDA, we needed to ensure that our dataset was clean. Our dataset 
 
 Before filtering into a subset dataframe, the HoopR dataset had over 500,000 rows with more than 50 columns. After aggregating the essential data, we now have a little over 6,000 rows and about 28 columns. The raw columns included: points_scored, field_goals_attempted, 3_pointers_scored, team_winner, turnovers, number_of_games_played, player_name, team_name, player_position, and many others that we excluded due to their irrelevance to our dataset. Our columns now consist of variables like: avg_pts, avg_blks, plus_minus, avg_mins_played, avg_3pts, avg_fga, avg_fgm and much more. These variables are extremely relevant to our questions because the bottom line of our project is to depict why winners win and what it takes for a player to earn the MVP trophy.
 
-So far, we have conducted some preliminary EDA to determine which features are most important in predicting an NBA champion. We have gathered a list of features—Team Points per Game, Team Points Allowed per Game, Bench Points, Scoring Efficiency, and Team Rebounds +/-— that appear to play a role in predicting a winner, mvp and champion.
-
 ## Data Analysis
 
 ### Assumptions
